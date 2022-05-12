@@ -28,6 +28,6 @@ body:
     attributes:
       label: Additional Context
       description: Where did you meet Infraform Community? What do you like about this community? Why do you want to join?
-      default: "I would like to be part of the awesome community."
+      placeholder: I would like to be part of the awesome community
     validations:
       required: false

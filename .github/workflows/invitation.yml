@@ -11,7 +11,7 @@ jobs:
         uses: vj-abigo/invite-on-label@v1.2
         with:
           organization: infraform
-          label: github-invitation
+          label: ✉️ github-invitation
           repo-token: ${{ secrets.REPO_GITHUB_TOKEN }}
           comment: "![image](https://user-images.githubusercontent.com/51391473/138764839-1011988e-66f2-4427-a8fc-e0380971df29.gif)<br><b>Invitation sent to join the GitHub Organization. Welcome to Infraform 🎉</b><br><br>Please check your mail to accept the invitation sent by the bot! 🤖<br><h1>About us</h1>Infraform is a solution for decentralized creator economy, it is designed for the development solution and enhance creators to create their infrastructure 💻 Great to have you in our community ✨ Looking forward to your valuable contributions! 🤓 You can also check our community [socials](https://bio.link/Infraform) ✨ 💛 You can also share our community with other folks who want to learn development, DevOps, tech, and contribute together and with us 👉👈"
         env:

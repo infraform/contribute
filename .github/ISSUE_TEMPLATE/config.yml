@@ -1,6 +1,9 @@
 blank_issues_enabled: false
 
 contact_links:
-  - name: Linkedin community
+  - name: GitHub community
+    url: https://github.com/infraform/
+    about: Contact us via our GitHub community if you found any bug or need any help.
+  - name: LinkedIn community
     url: https://www.linkedin.com/company/infraform/
     about: Follow us on LinkedIn to stay connected with the community and learn more about Infraform.

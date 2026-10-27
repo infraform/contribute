@@ -1,18 +1,138 @@
+name: Community Invitation
+
 on:
   issues:
-    types: [labeled]
+    types: [opened, labeled]
 
 jobs:
   automate_invite:
+    if: contains(github.event.issue.labels.*.name, '✉️ github-invitation') || github.event.label.name == '✉️ github-invitation'
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
 
     steps:
-      - name: Invite-on-label
-        uses: vj-abigo/invite-on-label@v1.2
+      - name: Process Community Invitation
+        uses: actions/github-script@v7
         with:
-          organization: infraform
-          label: ✉️ github-invitation
-          repo-token: ${{ secrets.REPO_GITHUB_TOKEN }}
-          comment: "![image](https://raw.githubusercontent.com/infraform/contribute/master/welcome_infraform.gif)<br><b>Invitation sent to join the GitHub Organization. Welcome to Infraform 🎉</b><br><br>Please check your mail to accept the invitation sent by GitHub! 🤖<br><h1>About us</h1>Infraform is a remarkable open-source solution tailored for serverless platforms, aimed at empowering creators to craft their infrastructure solutions. 💻 We're thrilled to welcome you into our vibrant community! ✨ We eagerly anticipate your valuable contributions! 🤓 Don't forget to explore our community on [Github](https://github.com/infraform) and connect with us on [LinkedIn](https://www.linkedin.com/company/infraform/) 💜 Feel free to spread the word about our community to like-minded individuals interested in development, DevOps, technology, and collaborative contributions. 👉💜👈"
+          github-token: ${{ secrets.REPO_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const org = process.env.TARGET_ORG || 'infraform';
+            const inviteToken = process.env.INVITE_TOKEN;
+            const issue = context.payload.issue;
+
+            if (!issue) {
+              core.setFailed('No issue found in context payload');
+              return;
+            }
+
+            if (issue.state === 'closed') {
+              core.info(`Issue #${issue.number} is already closed. Skipping.`);
+              return;
+            }
+
+            if (!inviteToken) {
+              core.setFailed('Missing required secret: INVITE_TOKEN');
+              return;
+            }
+
+            const username = issue.user.login;
+            const inviteeId = issue.user.id;
+            core.info(`Processing community invitation for @${username} (id: ${inviteeId}) on issue #${issue.number}`);
+
+            const welcomeComment = `![image](https://raw.githubusercontent.com/infraform/contribute/master/welcome_infraform.gif)<br><b>Invitation sent to join the GitHub Organization. Welcome to Infraform 🎉</b><br><br>Please check your mail to accept the invitation sent by GitHub! 🤖<br><h1>About us</h1>Infraform is a remarkable open-source solution tailored for serverless platforms, aimed at empowering creators to craft their infrastructure solutions. 💻 We're thrilled to welcome you into our vibrant community! ✨ We eagerly anticipate your valuable contributions! 🤓 Don't forget to explore our community on [Github](https://github.com/infraform) and connect with us on [LinkedIn](https://www.linkedin.com/company/infraform/) 💜 Feel free to spread the word about our community to like-minded individuals interested in development, DevOps, technology, and collaborative contributions. 👉💜👈`;
+
+            const alreadyMemberComment = `![image](https://raw.githubusercontent.com/infraform/contribute/master/welcome_infraform.gif)<br><b>You are already a member of the Infraform GitHub Organization! 🎉</b><br><br>Hey @${username}, you are already part of our community. 💻 We're thrilled to have you with us! ✨ We eagerly anticipate your valuable contributions! 🤓<br><br>Explore our community on [Github](https://github.com/infraform) and connect with us on [LinkedIn](https://www.linkedin.com/company/infraform/) 💜`;
+
+            const alreadyInvitedComment = `![image](https://raw.githubusercontent.com/infraform/contribute/master/welcome_infraform.gif)<br><b>An invitation has already been sent to your GitHub account! 📬</b><br><br>Hey @${username}, an invitation to join the Infraform organization is already pending. Please check your email or visit https://github.com/${org} to accept it! 🤖<br><br>Explore our community on [Github](https://github.com/infraform) and connect with us on [LinkedIn](https://www.linkedin.com/company/infraform/) 💜`;
+
+            async function postCommentAndClose(commentBody) {
+              core.info(`Posting comment to issue #${issue.number}`);
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: commentBody
+              });
+
+              core.info(`Closing issue #${issue.number}`);
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'completed'
+              });
+            }
+
+            // 1. Check if user is already a member
+            let isMember = false;
+            try {
+              const memRes = await github.request('GET /orgs/{org}/members/{username}', {
+                org,
+                username,
+                headers: { authorization: `token ${inviteToken}` }
+              });
+              if (memRes.status === 204) {
+                isMember = true;
+              }
+            } catch (err) {
+              if (err.status !== 404) {
+                core.warning(`Membership check returned status ${err.status}: ${err.message}`);
+              }
+            }
+
+            if (isMember) {
+              core.info(`User @${username} is already an org member.`);
+              await postCommentAndClose(alreadyMemberComment);
+              return;
+            }
+
+            // 2. Check if user already has a pending invitation
+            let isPending = false;
+            try {
+              const invRes = await github.request('GET /orgs/{org}/invitations', {
+                org,
+                headers: { authorization: `token ${inviteToken}` }
+              });
+              if (Array.isArray(invRes.data)) {
+                isPending = invRes.data.some(inv => (inv.login && inv.login.toLowerCase() === username.toLowerCase()));
+              }
+            } catch (err) {
+              core.warning(`Pending invitation check returned status ${err.status}: ${err.message}`);
+            }
+
+            if (isPending) {
+              core.info(`User @${username} already has a pending invitation.`);
+              await postCommentAndClose(alreadyInvitedComment);
+              return;
+            }
+
+            // 3. Attempt to create the invitation
+            try {
+              core.info(`Sending invitation to @${username}...`);
+              await github.request('POST /orgs/{org}/invitations', {
+                org,
+                invitee_id: inviteeId,
+                headers: { authorization: `token ${inviteToken}` }
+              });
+              core.info(`Invitation sent successfully to @${username}.`);
+              await postCommentAndClose(welcomeComment);
+            } catch (err) {
+              const errMsg = (err.message || '').toLowerCase();
+              const resData = JSON.stringify(err.response?.data || '').toLowerCase();
+
+              if (errMsg.includes('already a part of this organization') || resData.includes('already a part of this organization')) {
+                core.info(`API returned that user is already a part of the organization.`);
+                await postCommentAndClose(alreadyMemberComment);
+              } else if (errMsg.includes('invitation already exists') || resData.includes('invitation already exists') || resData.includes('already invited')) {
+                core.info(`API returned that invitation already exists.`);
+                await postCommentAndClose(alreadyInvitedComment);
+              } else {
+                core.error(`Failed to invite @${username}: ${err.message}`);
+                throw err;
+              }
+            }
         env:
           INVITE_TOKEN: ${{ secrets.INFRA_INVITE_TOKEN }}
+          TARGET_ORG: infraform
